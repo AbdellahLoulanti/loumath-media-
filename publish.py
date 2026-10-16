@@ -12,19 +12,24 @@ import json
 import os
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
-from zoneinfo import ZoneInfo
-
-import requests
 
 API = "https://graph.instagram.com/v21.0"
 TOKEN = os.environ.get("IG_TOKEN", "").strip()
 
 
 def call(method, path, **params):
+    """Standard library only, so the cloud task needs nothing installed."""
     params["access_token"] = TOKEN
-    r = requests.request(method, f"{API}/{path}", params=params, timeout=120)
-    data = r.json()
+    url = f"{API}/{path}?{urllib.parse.urlencode(params)}"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, method=method), timeout=120) as r:
+            data = json.load(r)
+    except urllib.error.HTTPError as e:
+        data = json.load(e)
     if "error" in data:
         raise RuntimeError(f"{path}: {data['error'].get('message')}")
     return data
@@ -45,7 +50,8 @@ def wait_until_ready(container, kind):
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     dry = "--dry-run" in sys.argv
-    today = args[0] if args else dt.datetime.now(ZoneInfo("Africa/Casablanca")).date().isoformat()
+    # Morocco is UTC+1 (outside Ramadan, when it moves to UTC+0; the 13:00 run is unaffected).
+    today = args[0] if args else (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=1)).date().isoformat()
 
     schedule = json.loads((Path(__file__).parent / "schedule.json").read_text(encoding="utf-8"))
     items = schedule.get(today)
